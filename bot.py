@@ -8,10 +8,11 @@ api_hash = "735a5e369c70f328eab9ad3c52c3b5cf"
 session_str = "1BVtsOHIBu7XcTP32jiyQMveM6koszEQ1CIuIjPM0UuXTfyV0rZvLhTXWXZ7vhx1CeM5QQhVhwsETHDbxZErwyPgk9gtybNl-59qqXdmsy6UlPw3K1cgb6eBY4rejP7X5f6uQmMjKfTjMqaxrLqht2RoK-jQl_FF7H9Prw9uhG_1IGt6cKr2seAc5yrLYxAaAxp2FBgGO8T05gPB66XN17NYSadwP8ToXuPS77UUVzR4RRf9GKBvy50Wdgank1Lm_f17pc8MhMLSQEshCl13eFP4Vnfkd-QCIppynPdN7dqVbf724Ytt25K73P4nv0SMJw8symNrbnwsMg5xioFA5Yl6mUwPy0UY="
 
 TARGET = "@qwpc8"
-PREFIX = "测试周期勿跟 私信同款"  # ← 想改前缀就改这里
+PREFIX = "点赞死全家 跟个sb一样"
 history = []
 results = []
 processed_ids = set()
+last_sent_pred_num = 0  # 防重锁：记录上一次实际发送的预测期号
 
 bold_map = {
     '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟴': '8', '𝟵': '9',
@@ -107,7 +108,7 @@ async def start(event):
 @client.on(events.NewMessage(chats=TARGET))
 @client.on(events.MessageEdited(chats=TARGET))
 async def handler(event):
-    global history, results, processed_ids
+    global history, results, processed_ids, last_sent_pred_num
     msg_id = event.message.id
     if msg_id in processed_ids:
         return
@@ -143,12 +144,26 @@ async def handler(event):
     pred_type, double_group = res
 
     if should_clear:
+        # 杀对了，清空，只留新一期
         results = [(pred_num, pred_type, double_group)]
-        await client.send_message(TARGET, PREFIX + "\n" + build_line(pred_num, pred_type, double_group, history))
     else:
-        results.append((pred_num, pred_type, double_group))
-        lines = [build_line(pred_num_i, pred_type_i, double_i, history) for (pred_num_i, pred_type_i, double_i) in results]
-        await client.send_message(TARGET, PREFIX + "\n" + "\n".join(lines))
+        # 没杀对（中了），保留旧results，追加新预测
+        if not any(r[0] == pred_num for r in results):
+            results.append((pred_num, pred_type, double_group))
+
+    # 限制最多保留5期，防太长
+    results = results[-5:]
+
+    # 防重：如果这次要发的预测期号跟上次发的一模一样，说明是重复触发，直接return
+    max_pred_in_results = max([r[0] for r in results]) if results else 0
+    if max_pred_in_results <= last_sent_pred_num:
+        return
+
+    lines = [build_line(pred_num_i, pred_type_i, double_i, history) for (pred_num_i, pred_type_i, double_i) in results]
+    output = PREFIX + "\n" + "\n".join(lines)
+    
+    last_sent_pred_num = max_pred_in_results
+    await client.send_message(TARGET, output)
 
 print("启动中...")
 
